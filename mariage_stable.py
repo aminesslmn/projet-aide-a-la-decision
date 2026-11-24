@@ -10,7 +10,9 @@ Contenu :
   2. Algorithme du mariage stable (acceptation différée), côté
      étudiants proposants OU côté établissements proposants.
   3. Mesures de satisfaction (étudiants, établissements, globale).
+  4. Manipulation : mensonges d'un étudiant, listes courtes déclarées.
   + Vérification de la stabilité du résultat.
+  + Historique tour par tour (gale_shapley(..., historique=True)).
 
 Uniquement la bibliothèque standard Python (>= 3.8).
 """
@@ -125,6 +127,11 @@ class Resultat:
     admis: List[List[int]]                   # étudiants admis par établissement
     nb_propositions: int
     proposant: str
+    # Historique tour par tour (rempli seulement si historique=True). Chaque tour :
+    #   {"tour": k, "propositions": [(e, h, acceptee)], "rejets": [(e, h)],
+    #    "admis": admis de chaque établissement à la fin du tour}
+    # Côté établissements proposants, un « rejet » (e, h) = e quitte h pour mieux.
+    tours: List[dict] = field(default_factory=list)
 
 
 def _rangs(prefs: List[List[int]], n_autres: int) -> List[List[Optional[int]]]:
@@ -136,36 +143,61 @@ def _rangs(prefs: List[List[int]], n_autres: int) -> List[List[Optional[int]]]:
     return r
 
 
-def gale_shapley(inst: Instance, proposant: str = "etudiants") -> Resultat:
+def gale_shapley(inst: Instance, proposant: str = "etudiants",
+                 historique: bool = False) -> Resultat:
     """Algorithme de Gale-Shapley many-to-one.
 
     proposant = "etudiants"      : optimal pour les étudiants (version Parcoursup/APB).
     proposant = "etablissements" : optimal pour les établissements.
+    historique = True            : enregistre le déroulement tour par tour (Resultat.tours).
     Complexité : O(n_etu * n_etab) propositions au maximum.
+
+    La file contient des couples (agent, tour) : un agent rejeté au tour k repasse
+    au tour k+1. Cela ne change ni l'ordre de traitement ni le résultat ; le numéro
+    de tour ne sert qu'à l'affichage pas à pas.
     """
     rang_etu = _rangs(inst.pref_etu, inst.n_etab)
     rang_etab = _rangs(inst.pref_etab, inst.n_etu)
     nb_prop = 0
+    tours: List[dict] = []
+    courant = {"tour": 1, "propositions": [], "rejets": []}
+
+    def fermer_tour(admis_actuels):
+        """Clôt le tour courant (s'il s'est passé quelque chose) avec une photo des admis."""
+        if historique and (courant["propositions"] or courant["rejets"]):
+            photo = [sorted(L, key=lambda x: rang_etab[h][x]) for h, L in enumerate(admis_actuels)]
+            tours.append({**courant, "admis": photo})
 
     if proposant == "etudiants":
         prochain = [0] * inst.n_etu                 # indice du prochain établissement à demander
         admis: List[List[int]] = [[] for _ in range(inst.n_etab)]
-        libres = deque(range(inst.n_etu))
+        libres = deque((e, 1) for e in range(inst.n_etu))
         while libres:
-            e = libres.popleft()
+            e, t = libres.popleft()
+            if historique and t != courant["tour"]:
+                fermer_tour(admis)
+                courant = {"tour": t, "propositions": [], "rejets": []}
             if prochain[e] >= len(inst.pref_etu[e]):
                 continue                            # liste épuisée : reste non affecté
             h = inst.pref_etu[e][prochain[e]]
             prochain[e] += 1
             nb_prop += 1
             if rang_etab[h][e] is None:             # h n'a pas classé e : refus
-                libres.append(e)
+                if historique:
+                    courant["propositions"].append((e, h, False))
+                libres.append((e, t + 1))
                 continue
             admis[h].append(e)
+            pire = None
             if len(admis[h]) > inst.capacites[h]:   # trop de candidats : rejeter le pire
                 pire = max(admis[h], key=lambda x: rang_etab[h][x])
                 admis[h].remove(pire)
-                libres.append(pire)
+                libres.append((pire, t + 1))
+            if historique:
+                courant["propositions"].append((e, h, pire != e))
+                if pire is not None and pire != e:
+                    courant["rejets"].append((pire, h))
+        fermer_tour(admis)
         affect: List[Optional[int]] = [None] * inst.n_etu
         for h, L in enumerate(admis):
             for e in L:
@@ -175,35 +207,50 @@ def gale_shapley(inst: Instance, proposant: str = "etudiants") -> Resultat:
         prochain = [0] * inst.n_etab
         affect = [None] * inst.n_etu
         nb_admis = [0] * inst.n_etab
-        actifs = deque(h for h in range(inst.n_etab) if inst.capacites[h] > 0)
+        actifs = deque((h, 1) for h in range(inst.n_etab) if inst.capacites[h] > 0)
+
+        def admis_actuels():
+            A = [[] for _ in range(inst.n_etab)]
+            for e_, h_ in enumerate(affect):
+                if h_ is not None:
+                    A[h_].append(e_)
+            return A
+
         while actifs:
-            h = actifs.popleft()
+            h, t = actifs.popleft()
+            if historique and t != courant["tour"]:
+                fermer_tour(admis_actuels())
+                courant = {"tour": t, "propositions": [], "rejets": []}
             # h propose à ses étudiants préférés tant qu'il a des places libres
             while nb_admis[h] < inst.capacites[h] and prochain[h] < len(inst.pref_etab[h]):
                 e = inst.pref_etab[h][prochain[h]]
                 prochain[h] += 1
                 nb_prop += 1
-                if rang_etu[e][h] is None:
-                    continue
-                actuel = affect[e]
-                if actuel is None:
-                    affect[e] = h
-                    nb_admis[h] += 1
-                elif rang_etu[e][h] < rang_etu[e][actuel]:
-                    affect[e] = h
-                    nb_admis[h] += 1
-                    nb_admis[actuel] -= 1
-                    actifs.append(actuel)           # l'ancien établissement a une place libre
-        admis = [[] for _ in range(inst.n_etab)]
-        for e, h in enumerate(affect):
-            if h is not None:
-                admis[h].append(e)
+                accepte = False
+                if rang_etu[e][h] is not None:
+                    actuel = affect[e]
+                    if actuel is None:
+                        affect[e] = h
+                        nb_admis[h] += 1
+                        accepte = True
+                    elif rang_etu[e][h] < rang_etu[e][actuel]:
+                        affect[e] = h
+                        nb_admis[h] += 1
+                        nb_admis[actuel] -= 1
+                        actifs.append((actuel, t + 1))  # l'ancien établissement a une place libre
+                        accepte = True
+                        if historique:
+                            courant["rejets"].append((e, actuel))
+                if historique:
+                    courant["propositions"].append((e, h, accepte))
+        admis = admis_actuels()
+        fermer_tour(admis)
     else:
         raise ValueError("proposant doit être 'etudiants' ou 'etablissements'")
 
     for L, h in zip(admis, range(inst.n_etab)):
         L.sort(key=lambda x: rang_etab[h][x])
-    return Resultat(affect, admis, nb_prop, proposant)
+    return Resultat(affect, admis, nb_prop, proposant, tours)
 
 
 def paires_bloquantes(inst: Instance, res: Resultat) -> List[tuple]:
@@ -324,6 +371,108 @@ def satisfaction_globale(s_etu: Satisfaction, s_etab: Satisfaction, alpha: float
         "globale": alpha * s_etu.moyenne + (1 - alpha) * s_etab.moyenne,
         "desequilibre": abs(s_etu.moyenne - s_etab.moyenne),
     }
+
+
+# ---------------------------------------------------------------------------
+# 4. Manipulation : un étudiant peut-il gagner en mentant ?
+# ---------------------------------------------------------------------------
+#
+# L'algorithme ne voit que les préférences DÉCLARÉES. On compare donc ce que
+# l'étudiant obtient en disant la vérité et en mentant, toujours mesuré avec ses
+# VRAIES préférences. De même, la stabilité est vérifiée avec les vraies
+# préférences : une affectation stable pour les listes déclarées peut être
+# instable pour les vraies.
+
+def exemple_mensonge() -> Instance:
+    """Petit exemple où un mensonge paie quand les établissements proposent.
+
+    E0 : H0 > H1   E1 : H1 > H0   H0 : E1 > E0   H1 : E0 > E1   (1 place chacun)
+    Vérité : E0 -> H1, E1 -> H0 (2e choix pour tous).
+    Si E0 déclare seulement [H0] : E0 -> H0, E1 -> H1 (1er choix pour tous).
+    """
+    return Instance(pref_etu=[[0, 1], [1, 0]], pref_etab=[[1, 0], [0, 1]], capacites=[1, 1],
+                    description="Exemple du mensonge : 2 étudiants, 2 établissements à 1 place")
+
+
+def mensonges_possibles(pref: List[int]):
+    """Génère (type, liste déclarée) pour les mensonges simples d'un étudiant.
+
+    "troncature" : il ne déclare que ses k premiers choix (liste courte), k < L ;
+    "en_tete"    : il place un autre établissement en premier ;
+    "echange"    : il échange deux établissements voisins.
+    """
+    vus = {tuple(pref)}
+    candidats = [("troncature", pref[:k]) for k in range(1, len(pref))]
+    candidats += [("en_tete", [h] + [x for x in pref if x != h]) for h in pref[1:]]
+    for i in range(len(pref) - 1):
+        l = list(pref)
+        l[i], l[i + 1] = l[i + 1], l[i]
+        candidats.append(("echange", l))
+    for typ, liste in candidats:
+        if tuple(liste) not in vus:
+            vus.add(tuple(liste))
+            yield typ, liste
+
+
+@dataclass
+class Mensonge:
+    etudiant: int
+    type: str                       # type du meilleur mensonge trouvé
+    liste_declaree: List[int]
+    rang_honnete: Optional[int]     # vrai rang obtenu en disant la vérité (0 = 1er choix, None = rien)
+    rang_mensonge: int              # vrai rang obtenu en mentant
+    stable_vrai: bool               # affectation stable pour les VRAIES préférences ?
+    types_gagnants: List[str] = field(default_factory=list)   # tous les types qui font gagner
+
+
+def _rang_vrai(inst: Instance, e: int, h: Optional[int]) -> Optional[int]:
+    return inst.pref_etu[e].index(h) if h is not None else None
+
+
+def remplacer_liste(inst: Instance, e: int, liste: List[int]) -> Instance:
+    """Copie de l'instance où l'étudiant e déclare `liste`."""
+    return Instance(inst.pref_etu[:e] + [list(liste)] + inst.pref_etu[e + 1:],
+                    inst.pref_etab, inst.capacites, inst.description)
+
+
+def chercher_mensonges(inst: Instance, proposant: str = "etudiants",
+                       etudiants: Optional[List[int]] = None) -> List[Mensonge]:
+    """Pour chaque étudiant testé, cherche un mensonge simple qui lui donne un
+    établissement qu'il préfère VRAIMENT. Renvoie le meilleur mensonge par étudiant
+    gagnant. Liste vide <=> aucun étudiant testé ne peut gagner seul."""
+    base = gale_shapley(inst, proposant)
+    trouves = []
+    for e in (range(inst.n_etu) if etudiants is None else etudiants):
+        r_h = _rang_vrai(inst, e, base.affectation_etu[e])
+        if r_h == 0:
+            continue                                    # déjà son 1er choix
+        meilleur, types = None, []
+        for typ, liste in mensonges_possibles(inst.pref_etu[e]):
+            res = gale_shapley(remplacer_liste(inst, e, liste), proposant)
+            r_m = _rang_vrai(inst, e, res.affectation_etu[e])
+            if r_m is not None and (r_h is None or r_m < r_h):
+                if typ not in types:
+                    types.append(typ)
+                if meilleur is None or r_m < meilleur.rang_mensonge:
+                    meilleur = Mensonge(e, typ, liste, r_h, r_m,
+                                        not paires_bloquantes(inst, res))
+        if meilleur:
+            meilleur.types_gagnants = types
+            trouves.append(meilleur)
+    return trouves
+
+
+def tronquer_listes(inst: Instance, fraction: float, k: int,
+                    graine: Optional[int] = None):
+    """Une part `fraction` des étudiants (tirés au hasard) ne déclare que ses k
+    premiers choix. Renvoie (instance déclarée, liste des menteurs).
+    Les établissements gardent leurs vraies listes."""
+    rng = random.Random(graine)
+    menteurs = sorted(rng.sample(range(inst.n_etu), round(fraction * inst.n_etu)))
+    m = set(menteurs)
+    pref = [p[:k] if e in m else list(p) for e, p in enumerate(inst.pref_etu)]
+    desc = f"{inst.description} | {len(menteurs)} étudiants déclarent {k} choix"
+    return Instance(pref, inst.pref_etab, inst.capacites, desc), menteurs
 
 
 # ---------------------------------------------------------------------------
