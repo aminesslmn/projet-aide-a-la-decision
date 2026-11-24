@@ -58,12 +58,14 @@ COLONNES = ["scenario", "proposant", "stable", "propositions", "temps_ms",
             "sat_globale", "desequilibre"]
 
 
-def lancer():
+def lancer(r=None):
+    """Exécute tous les scénarios avec r instances chacun (par défaut : R)."""
+    r = r or R
     lignes = []
     for nom, params in SCENARIOS:
         for proposant in ("etudiants", "etablissements"):
             acc = {c: [] for c in COLONNES[2:]}
-            for graine in range(R):
+            for graine in range(r):
                 inst = generer_instance(graine=graine, **params)
                 t0 = time.perf_counter()
                 res = gale_shapley(inst, proposant)

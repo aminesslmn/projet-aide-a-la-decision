@@ -1,0 +1,4 @@
+# Seulement pour l'interface (interface.py).
+# mariage_stable.py et experiences.py n'utilisent que la bibliothèque standard.
+streamlit>=1.37
+pandas

@@ -14,12 +14,17 @@ Le travail comprend :
 4. des tests sur 22 jeux de données, dont 14 consacrés à la capacité des établissements (pénurie, excédent, répartition des places) ;
 5. une extension (sans implantation) vers les représentations compactes des préférences.
 
-**Fichiers rendus :** `mariage_stable.py` (bibliothèque), `experiences.py` (campagne de tests), `resultats.csv` (résultats). Python ≥ 3.8, bibliothèque standard uniquement.
+**Fichiers rendus :** `mariage_stable.py` (bibliothèque), `experiences.py` (campagne de tests), `resultats.csv` (résultats), `interface.py` (interface graphique). Python ≥ 3.8. La bibliothèque et les tests n'utilisent que la bibliothèque standard ; l'interface nécessite `streamlit` et `pandas` (`requirements.txt`).
 
 ```
 python mariage_stable.py      # petit exemple commenté
 python experiences.py [R]     # R instances par scénario (30 par défaut)
+
+pip install -r requirements.txt
+streamlit run interface.py    # interface graphique dans le navigateur
 ```
+
+L'interface propose trois onglets : générer une instance et voir l'affectation obtenue (stabilité, satisfaction, résultat par établissement) ; comparer les deux versions de l'algorithme sur la même instance ; lancer les 22 scénarios, avec le tableau des résultats, les graphiques et le téléchargement de `resultats.csv`.
 
 ## 2. Modélisation
 
