@@ -61,8 +61,7 @@ def repartir_places(total: int, n_etab: int) -> List[int]:
 def generer_instance(n_etu: int, n_etab: int, capacites: Optional[List[int]] = None,
                      mode: str = "uniforme", correlation: float = 0.7,
                      longueur_liste: Optional[int] = None,
-                     graine: Optional[int] = None,
-                     capacites_selon_prestige: Optional[str] = None) -> Instance:
+                     graine: Optional[int] = None) -> Instance:
     """Génère des préférences aléatoires.
 
     mode = "uniforme" : chaque agent classe l'autre côté selon une permutation
@@ -74,9 +73,6 @@ def generer_instance(n_etu: int, n_etab: int, capacites: Optional[List[int]] = N
     longueur_liste    : si fourni, chaque étudiant ne classe que ses k premiers
                         établissements (listes incomplètes, comme dans Parcoursup).
     capacites         : par défaut, places réparties pour couvrir tous les étudiants.
-    capacites_selon_prestige (mode "correle") : "direct" donne les plus grandes
-                        capacités aux établissements les plus prestigieux,
-                        "inverse" les plus petites ; None garde l'ordre fourni.
     """
     rng = random.Random(graine)
     if capacites is None:
@@ -95,14 +91,6 @@ def generer_instance(n_etu: int, n_etab: int, capacites: Optional[List[int]] = N
         note = [rng.random() for _ in etus]
         pref_etu = [_classement_bruite(prestige, bruit, rng, etabs) for _ in etus]
         pref_etab = [_classement_bruite(note, bruit, rng, etus) for _ in etabs]
-        if capacites_selon_prestige is not None:
-            # "direct" : les établissements les plus prestigieux ont le plus de places
-            # "inverse" : les plus prestigieux ont le moins de places
-            par_prestige = sorted(etabs, key=lambda h: prestige[h], reverse=True)
-            caps = sorted(capacites, reverse=(capacites_selon_prestige == "direct"))
-            capacites = [0] * n_etab
-            for h, c in zip(par_prestige, caps):
-                capacites[h] = c
     else:
         raise ValueError(f"mode inconnu : {mode}")
 

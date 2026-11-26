@@ -8,7 +8,7 @@ Quatre onglets :
   1. Une instance            : générer une instance, lancer l'algorithme, voir le résultat.
   2. Pas à pas               : rejouer l'algorithme tour par tour.
   3. Comparer les deux côtés : étudiants proposants vs établissements proposants.
-  4. Les 22 scénarios        : campagne de tests de experiences.py, tableaux et graphiques.
+  4. Les scénarios           : campagne de tests de experiences.py, tableaux et graphiques.
 """
 
 from collections import Counter
@@ -42,10 +42,10 @@ PROPOSANTS = {"Étudiants proposants": "etudiants", "Établissements proposants"
 # ---------------------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)
-def calculer_instance(n_etu, n_etab, capacites, mode, correlation, k, graine, selon_prestige):
+def calculer_instance(n_etu, n_etab, capacites, mode, correlation, k, graine):
     return generer_instance(n_etu, n_etab, capacites=list(capacites) if capacites else None,
                             mode=mode, correlation=correlation, longueur_liste=k or None,
-                            graine=graine, capacites_selon_prestige=selon_prestige)
+                            graine=graine)
 
 
 @st.cache_data(show_spinner=False)
@@ -106,21 +106,12 @@ with st.sidebar:
                      f"(reçu : {len(capacites)}).")
             st.stop()
 
-    selon_prestige = None
-    if mode == "correle":
-        choix = st.selectbox("Capacités selon le prestige",
-                             ["aucun", "direct", "inverse"],
-                             format_func={"aucun": "Ordre donné",
-                                          "direct": "Établissements populaires = grands",
-                                          "inverse": "Établissements populaires = petits"}.get)
-        selon_prestige = None if choix == "aucun" else choix
-
     k = st.slider("Longueur des listes des étudiants (0 = complète)", 0, n_etab, 0)
     graine = st.number_input("Graine aléatoire", 0, 100_000, 42)
 
 
 cle = (n_etu, n_etab, tuple(capacites) if capacites else None, mode, correlation, k,
-       int(graine), selon_prestige)
+       int(graine))
 inst = calculer_instance(*cle)
 st.sidebar.caption(inst.description)
 
@@ -135,7 +126,7 @@ def tableau_preferences(inst, limite=50):
 
 
 onglet1, onglet_pas, onglet2, onglet3 = st.tabs(
-    ["Une instance", "Pas à pas", "Comparer les deux côtés", "Les 22 scénarios"])
+    ["Une instance", "Pas à pas", "Comparer les deux côtés", "Les scénarios"])
 
 # ---------------------------------------------------------------------------
 # Onglet 1 : une instance
@@ -234,15 +225,11 @@ with onglet2:
     st.caption("Les étudiants non affectés ne figurent pas dans l'histogramme.")
 
 # ---------------------------------------------------------------------------
-# Onglet 3 : campagne des 22 scénarios
+# Onglet 3 : campagne des scénarios
 # ---------------------------------------------------------------------------
 
-RATIO_PLACES = {"S11": 25, "S7": 50, "S12": 75, "S13": 95, "S2": 100,
-                "S14": 105, "S15": 125, "S8": 150, "S16": 200}
-
-
 def code(nom):
-    """'S7 pénurie (50% places)' -> 'S07' (pour un tri correct dans les graphiques)."""
+    """'S3 pénurie (50% places)' -> 'S03' (pour un tri correct dans les graphiques)."""
     return f"S{int(nom.split()[0][1:]):02d}"
 
 
@@ -270,19 +257,6 @@ with onglet3:
         st.download_button("Télécharger resultats.csv",
                            df.round(4).to_csv(index=False).encode("utf-8"),
                            "resultats.csv", "text/csv")
-
-        st.subheader("Satisfaction selon le nombre de places (étudiants proposants)")
-        etu = df[df["proposant"] == "etudiants"].copy()
-        etu["code"] = etu["scenario"].str.split().str[0]
-        courbe = etu[etu["code"].isin(RATIO_PLACES)].copy()
-        courbe["% de places"] = courbe["code"].map(RATIO_PLACES)
-        courbe = (courbe.set_index("% de places").sort_index()
-                  [["sat_etu", "sat_etab", "sat_globale"]]
-                  .rename(columns={"sat_etu": "Étudiants", "sat_etab": "Établissements",
-                                   "sat_globale": "Globale"}))
-        st.line_chart(courbe)
-        st.caption("Scénarios S11, S7, S12, S13, S2, S14, S15, S8, S16 "
-                   "(200 étudiants, 10 établissements, préférences uniformes).")
 
         st.subheader("Satisfaction des étudiants par scénario")
         barres = df.assign(code=df["scenario"].map(code)).pivot(

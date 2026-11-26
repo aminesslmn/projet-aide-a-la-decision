@@ -20,36 +20,9 @@ R = 30  # répétitions par scénario
 
 # (nom, paramètres de generer_instance)
 SCENARIOS = [
-    ("S1 petit uniforme",         dict(n_etu=20,   n_etab=4,  mode="uniforme")),
-    ("S2 moyen uniforme",         dict(n_etu=200,  n_etab=10, mode="uniforme")),
-    ("S3 grand uniforme",         dict(n_etu=1000, n_etab=20, mode="uniforme")),
-    ("S4 corrélé c=0.3",          dict(n_etu=200,  n_etab=10, mode="correle", correlation=0.3)),
-    ("S5 corrélé c=0.7",          dict(n_etu=200,  n_etab=10, mode="correle", correlation=0.7)),
-    ("S6 corrélé c=0.95",         dict(n_etu=200,  n_etab=10, mode="correle", correlation=0.95)),
-    ("S7 pénurie (50% places)",   dict(n_etu=200,  n_etab=10, mode="uniforme", capacites=[10] * 10)),
-    ("S8 excédent (150% places)", dict(n_etu=200,  n_etab=10, mode="uniforme", capacites=[30] * 10)),
-    ("S9 listes courtes (k=3)",   dict(n_etu=200,  n_etab=10, mode="uniforme", longueur_liste=3)),
-    ("S10 1-1 classique n=100",   dict(n_etu=100,  n_etab=100, mode="uniforme")),
-    # --- A. Nombre total de places (rapport places / étudiants) ---
-    ("S11 pénurie sévère (25%)",       dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[5] * 10)),
-    ("S12 pénurie modérée (75%)",      dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[15] * 10)),
-    ("S13 légère pénurie (95%)",       dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[19] * 10)),
-    ("S14 léger excédent (105%)",      dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[21] * 10)),
-    ("S15 excédent modéré (125%)",     dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[25] * 10)),
-    ("S16 fort excédent (200%)",       dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[40] * 10)),
-    # --- B. Répartition inégale des places (total = 200) ---
-    ("S17 1 grand + 9 petits",         dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[110] + [10] * 9)),
-    ("S18 2 grands + 8 petits",        dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[60, 60] + [10] * 8)),
-    ("S19 200 étab. à 1 place",        dict(n_etu=200, n_etab=200, mode="uniforme")),
-    # --- C. Capacité et popularité (préférences corrélées c=0.7) ---
-    ("S20 populaires = petits",        dict(n_etu=200, n_etab=10, mode="correle", correlation=0.7,
-                                            capacites=[40, 35, 30, 25, 20, 15, 15, 10, 5, 5],
-                                            capacites_selon_prestige="inverse")),
-    ("S21 populaires = grands",        dict(n_etu=200, n_etab=10, mode="correle", correlation=0.7,
-                                            capacites=[40, 35, 30, 25, 20, 15, 15, 10, 5, 5],
-                                            capacites_selon_prestige="direct")),
-    ("S22 pénurie + corrélé (50%)",    dict(n_etu=200, n_etab=10, mode="correle", correlation=0.7,
-                                            capacites=[10] * 10)),
+    ("S1 référence (uniforme)",   dict(n_etu=200, n_etab=10, mode="uniforme")),
+    ("S2 corrélé c=0.95",         dict(n_etu=200, n_etab=10, mode="correle", correlation=0.95)),
+    ("S3 pénurie (50% places)",   dict(n_etu=200, n_etab=10, mode="uniforme", capacites=[10] * 10)),
 ]
 
 COLONNES = ["scenario", "proposant", "stable", "propositions", "temps_ms",
