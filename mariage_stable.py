@@ -10,7 +10,6 @@ Contenu :
   2. Algorithme du mariage stable (acceptation différée), côté
      étudiants proposants OU côté établissements proposants.
   3. Mesures de satisfaction (étudiants, établissements, globale).
-  4. Manipulation : mensonges d'un étudiant, listes courtes déclarées.
   + Vérification de la stabilité du résultat.
   + Historique tour par tour (gale_shapley(..., historique=True)).
 
@@ -53,6 +52,12 @@ def _classement_bruite(scores: List[float], bruit: float, rng: random.Random,
     return sorted(candidats, key=lambda c: scores[c] + rng.gauss(0, bruit), reverse=True)
 
 
+def repartir_places(total: int, n_etab: int) -> List[int]:
+    """Répartit `total` places le plus équitablement possible entre n_etab établissements."""
+    base, reste = divmod(total, n_etab)
+    return [base + (1 if h < reste else 0) for h in range(n_etab)]
+
+
 def generer_instance(n_etu: int, n_etab: int, capacites: Optional[List[int]] = None,
                      mode: str = "uniforme", correlation: float = 0.7,
                      longueur_liste: Optional[int] = None,
@@ -75,8 +80,7 @@ def generer_instance(n_etu: int, n_etab: int, capacites: Optional[List[int]] = N
     """
     rng = random.Random(graine)
     if capacites is None:
-        base, reste = divmod(n_etu, n_etab)
-        capacites = [base + (1 if h < reste else 0) for h in range(n_etab)]
+        capacites = repartir_places(n_etu, n_etab)
     assert len(capacites) == n_etab
 
     etus, etabs = list(range(n_etu)), list(range(n_etab))
@@ -371,108 +375,6 @@ def satisfaction_globale(s_etu: Satisfaction, s_etab: Satisfaction, alpha: float
         "globale": alpha * s_etu.moyenne + (1 - alpha) * s_etab.moyenne,
         "desequilibre": abs(s_etu.moyenne - s_etab.moyenne),
     }
-
-
-# ---------------------------------------------------------------------------
-# 4. Manipulation : un étudiant peut-il gagner en mentant ?
-# ---------------------------------------------------------------------------
-#
-# L'algorithme ne voit que les préférences DÉCLARÉES. On compare donc ce que
-# l'étudiant obtient en disant la vérité et en mentant, toujours mesuré avec ses
-# VRAIES préférences. De même, la stabilité est vérifiée avec les vraies
-# préférences : une affectation stable pour les listes déclarées peut être
-# instable pour les vraies.
-
-def exemple_mensonge() -> Instance:
-    """Petit exemple où un mensonge paie quand les établissements proposent.
-
-    E0 : H0 > H1   E1 : H1 > H0   H0 : E1 > E0   H1 : E0 > E1   (1 place chacun)
-    Vérité : E0 -> H1, E1 -> H0 (2e choix pour tous).
-    Si E0 déclare seulement [H0] : E0 -> H0, E1 -> H1 (1er choix pour tous).
-    """
-    return Instance(pref_etu=[[0, 1], [1, 0]], pref_etab=[[1, 0], [0, 1]], capacites=[1, 1],
-                    description="Exemple du mensonge : 2 étudiants, 2 établissements à 1 place")
-
-
-def mensonges_possibles(pref: List[int]):
-    """Génère (type, liste déclarée) pour les mensonges simples d'un étudiant.
-
-    "troncature" : il ne déclare que ses k premiers choix (liste courte), k < L ;
-    "en_tete"    : il place un autre établissement en premier ;
-    "echange"    : il échange deux établissements voisins.
-    """
-    vus = {tuple(pref)}
-    candidats = [("troncature", pref[:k]) for k in range(1, len(pref))]
-    candidats += [("en_tete", [h] + [x for x in pref if x != h]) for h in pref[1:]]
-    for i in range(len(pref) - 1):
-        l = list(pref)
-        l[i], l[i + 1] = l[i + 1], l[i]
-        candidats.append(("echange", l))
-    for typ, liste in candidats:
-        if tuple(liste) not in vus:
-            vus.add(tuple(liste))
-            yield typ, liste
-
-
-@dataclass
-class Mensonge:
-    etudiant: int
-    type: str                       # type du meilleur mensonge trouvé
-    liste_declaree: List[int]
-    rang_honnete: Optional[int]     # vrai rang obtenu en disant la vérité (0 = 1er choix, None = rien)
-    rang_mensonge: int              # vrai rang obtenu en mentant
-    stable_vrai: bool               # affectation stable pour les VRAIES préférences ?
-    types_gagnants: List[str] = field(default_factory=list)   # tous les types qui font gagner
-
-
-def _rang_vrai(inst: Instance, e: int, h: Optional[int]) -> Optional[int]:
-    return inst.pref_etu[e].index(h) if h is not None else None
-
-
-def remplacer_liste(inst: Instance, e: int, liste: List[int]) -> Instance:
-    """Copie de l'instance où l'étudiant e déclare `liste`."""
-    return Instance(inst.pref_etu[:e] + [list(liste)] + inst.pref_etu[e + 1:],
-                    inst.pref_etab, inst.capacites, inst.description)
-
-
-def chercher_mensonges(inst: Instance, proposant: str = "etudiants",
-                       etudiants: Optional[List[int]] = None) -> List[Mensonge]:
-    """Pour chaque étudiant testé, cherche un mensonge simple qui lui donne un
-    établissement qu'il préfère VRAIMENT. Renvoie le meilleur mensonge par étudiant
-    gagnant. Liste vide <=> aucun étudiant testé ne peut gagner seul."""
-    base = gale_shapley(inst, proposant)
-    trouves = []
-    for e in (range(inst.n_etu) if etudiants is None else etudiants):
-        r_h = _rang_vrai(inst, e, base.affectation_etu[e])
-        if r_h == 0:
-            continue                                    # déjà son 1er choix
-        meilleur, types = None, []
-        for typ, liste in mensonges_possibles(inst.pref_etu[e]):
-            res = gale_shapley(remplacer_liste(inst, e, liste), proposant)
-            r_m = _rang_vrai(inst, e, res.affectation_etu[e])
-            if r_m is not None and (r_h is None or r_m < r_h):
-                if typ not in types:
-                    types.append(typ)
-                if meilleur is None or r_m < meilleur.rang_mensonge:
-                    meilleur = Mensonge(e, typ, liste, r_h, r_m,
-                                        not paires_bloquantes(inst, res))
-        if meilleur:
-            meilleur.types_gagnants = types
-            trouves.append(meilleur)
-    return trouves
-
-
-def tronquer_listes(inst: Instance, fraction: float, k: int,
-                    graine: Optional[int] = None):
-    """Une part `fraction` des étudiants (tirés au hasard) ne déclare que ses k
-    premiers choix. Renvoie (instance déclarée, liste des menteurs).
-    Les établissements gardent leurs vraies listes."""
-    rng = random.Random(graine)
-    menteurs = sorted(rng.sample(range(inst.n_etu), round(fraction * inst.n_etu)))
-    m = set(menteurs)
-    pref = [p[:k] if e in m else list(p) for e, p in enumerate(inst.pref_etu)]
-    desc = f"{inst.description} | {len(menteurs)} étudiants déclarent {k} choix"
-    return Instance(pref, inst.pref_etab, inst.capacites, desc), menteurs
 
 
 # ---------------------------------------------------------------------------

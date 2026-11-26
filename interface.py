@@ -4,12 +4,11 @@ Interface graphique du projet « mariage stable ».
 Lancement :   py -m streamlit run interface.py
 (prérequis :  py -m pip install -r requirements.txt)
 
-Cinq onglets :
+Quatre onglets :
   1. Une instance            : générer une instance, lancer l'algorithme, voir le résultat.
   2. Pas à pas               : rejouer l'algorithme tour par tour.
   3. Comparer les deux côtés : étudiants proposants vs établissements proposants.
-  4. Manipulation            : un étudiant peut-il gagner en mentant ? listes courtes.
-  5. Les 22 scénarios        : campagne de tests de experiences.py, tableaux et graphiques.
+  4. Les 22 scénarios        : campagne de tests de experiences.py, tableaux et graphiques.
 """
 
 from collections import Counter
@@ -20,14 +19,21 @@ import streamlit as st
 import experiences
 from mariage_stable import (generer_instance, gale_shapley, paires_bloquantes,
                             satisfaction_etudiants, satisfaction_etablissements,
-                            satisfaction_globale, exemple_mensonge, chercher_mensonges,
-                            tronquer_listes, remplacer_liste)
+                            satisfaction_globale, repartir_places)
 
 st.set_page_config(page_title="Mariage stable", layout="wide")
 st.title("Mariage stable : affectation étudiants → établissements")
 
 E = lambda e: f"E{e}"
 H = lambda h: f"H{h}"
+
+
+def abreger(elements, limite, sep=", "):
+    """Joint les `limite` premiers éléments et ajoute « … » s'il en reste."""
+    elements = list(elements)
+    return sep.join(elements[:limite]) + (" …" if len(elements) > limite else "")
+
+
 PROPOSANTS = {"Étudiants proposants": "etudiants", "Établissements proposants": "etablissements"}
 
 
@@ -57,11 +63,6 @@ def calculer_historique(_inst, cle, proposant):
 
 
 @st.cache_data(show_spinner=False)
-def calculer_mensonges(_inst, cle, proposant, nb):
-    return chercher_mensonges(_inst, proposant, list(range(nb)))
-
-
-@st.cache_data(show_spinner=False)
 def calculer_campagne(r):
     return experiences.lancer(r)
 
@@ -72,78 +73,69 @@ def calculer_campagne(r):
 
 with st.sidebar:
     st.header("Instance")
-    source = st.radio("Source", ["aleatoire", "exemple"],
-                      format_func={"aleatoire": "Instance aléatoire",
-                                   "exemple": "Exemple du mensonge (2 étudiants)"}.get)
-    if source == "aleatoire":
-        n_etu = st.slider("Nombre d'étudiants", 2, 1000, 200, step=1)
-        n_etab = st.slider("Nombre d'établissements", 1, 200, 10)
+    n_etu = st.slider("Nombre d'étudiants", 2, 1000, 200, step=1)
+    n_etab = st.slider("Nombre d'établissements", 1, 200, 10)
 
-        mode = st.radio("Préférences", ["uniforme", "correle"], horizontal=True,
-                        format_func=lambda m: "Uniformes" if m == "uniforme" else "Corrélées")
-        correlation = 0.7
-        if mode == "correle":
-            correlation = st.slider("Corrélation", 0.05, 1.0, 0.7, 0.05,
-                                    help="Proche de 1 : tout le monde a les mêmes préférences.")
+    mode = st.radio("Préférences", ["uniforme", "correle"], horizontal=True,
+                    format_func=lambda m: "Uniformes" if m == "uniforme" else "Corrélées")
+    correlation = 0.7
+    if mode == "correle":
+        correlation = st.slider("Corrélation", 0.05, 1.0, 0.7, 0.05,
+                                help="Proche de 1 : tout le monde a les mêmes préférences.")
 
-        st.subheader("Capacités")
-        type_cap = st.radio("Places", ["automatique", "ratio", "personnalisées"],
-                            format_func={"automatique": "Automatique (places = étudiants)",
-                                         "ratio": "Ratio places / étudiants",
-                                         "personnalisées": "Personnalisées"}.get)
-        capacites = None
-        if type_cap == "ratio":
-            ratio = st.slider("Places en % des étudiants", 25, 200, 100, 5)
-            total = round(ratio / 100 * n_etu)
-            base, reste = divmod(total, n_etab)
-            capacites = [base + (1 if h < reste else 0) for h in range(n_etab)]
-        elif type_cap == "personnalisées":
-            texte = st.text_input(f"{n_etab} capacités séparées par des virgules",
-                                  ",".join(["20"] * n_etab))
-            try:
-                capacites = [int(x) for x in texte.replace(" ", "").split(",") if x != ""]
-            except ValueError:
-                st.error("Les capacités doivent être des nombres entiers.")
-                st.stop()
-            if len(capacites) != n_etab or any(c < 0 for c in capacites):
-                st.error(f"Il faut exactement {n_etab} capacités positives "
-                         f"(reçu : {len(capacites)}).")
-                st.stop()
+    st.subheader("Capacités")
+    type_cap = st.radio("Places", ["automatique", "ratio", "personnalisées"],
+                        format_func={"automatique": "Automatique (places = étudiants)",
+                                     "ratio": "Ratio places / étudiants",
+                                     "personnalisées": "Personnalisées"}.get)
+    capacites = None
+    if type_cap == "ratio":
+        ratio = st.slider("Places en % des étudiants", 25, 200, 100, 5)
+        total = round(ratio / 100 * n_etu)
+        capacites = repartir_places(total, n_etab)
+    elif type_cap == "personnalisées":
+        texte = st.text_input(f"{n_etab} capacités séparées par des virgules",
+                              ",".join(["20"] * n_etab))
+        try:
+            capacites = [int(x) for x in texte.replace(" ", "").split(",") if x != ""]
+        except ValueError:
+            st.error("Les capacités doivent être des nombres entiers.")
+            st.stop()
+        if len(capacites) != n_etab or any(c < 0 for c in capacites):
+            st.error(f"Il faut exactement {n_etab} capacités positives "
+                     f"(reçu : {len(capacites)}).")
+            st.stop()
 
-        selon_prestige = None
-        if mode == "correle":
-            choix = st.selectbox("Capacités selon le prestige",
-                                 ["aucun", "direct", "inverse"],
-                                 format_func={"aucun": "Ordre donné",
-                                              "direct": "Établissements populaires = grands",
-                                              "inverse": "Établissements populaires = petits"}.get)
-            selon_prestige = None if choix == "aucun" else choix
+    selon_prestige = None
+    if mode == "correle":
+        choix = st.selectbox("Capacités selon le prestige",
+                             ["aucun", "direct", "inverse"],
+                             format_func={"aucun": "Ordre donné",
+                                          "direct": "Établissements populaires = grands",
+                                          "inverse": "Établissements populaires = petits"}.get)
+        selon_prestige = None if choix == "aucun" else choix
 
-        k = st.slider("Longueur des listes des étudiants (0 = complète)", 0, n_etab, 0)
-        graine = st.number_input("Graine aléatoire", 0, 100_000, 42)
+    k = st.slider("Longueur des listes des étudiants (0 = complète)", 0, n_etab, 0)
+    graine = st.number_input("Graine aléatoire", 0, 100_000, 42)
 
 
-if source == "exemple":
-    cle = ("exemple",)
-    inst = exemple_mensonge()
-else:
-    cle = (n_etu, n_etab, tuple(capacites) if capacites else None, mode, correlation, k,
-           int(graine), selon_prestige)
-    inst = calculer_instance(*cle)
+cle = (n_etu, n_etab, tuple(capacites) if capacites else None, mode, correlation, k,
+       int(graine), selon_prestige)
+inst = calculer_instance(*cle)
 st.sidebar.caption(inst.description)
 
 
 def tableau_preferences(inst, limite=50):
-    lignes_e = [{"Étudiant": E(e), "Classement": " > ".join(H(h) for h in p[:15])
-                 + (" …" if len(p) > 15 else "")} for e, p in enumerate(inst.pref_etu[:limite])]
+    lignes_e = [{"Étudiant": E(e), "Classement": abreger(map(H, p), 15, " > ")}
+                for e, p in enumerate(inst.pref_etu[:limite])]
     lignes_h = [{"Établissement": H(h), "Capacité": inst.capacites[h],
-                 "Classement": " > ".join(E(e) for e in p[:15]) + (" …" if len(p) > 15 else "")}
+                 "Classement": abreger(map(E, p), 15, " > ")}
                 for h, p in enumerate(inst.pref_etab[:limite])]
     return pd.DataFrame(lignes_e), pd.DataFrame(lignes_h)
 
 
-onglet1, onglet_pas, onglet2, onglet_manip, onglet3 = st.tabs(
-    ["Une instance", "Pas à pas", "Comparer les deux côtés", "Manipulation", "Les 22 scénarios"])
+onglet1, onglet_pas, onglet2, onglet3 = st.tabs(
+    ["Une instance", "Pas à pas", "Comparer les deux côtés", "Les 22 scénarios"])
 
 # ---------------------------------------------------------------------------
 # Onglet 1 : une instance
@@ -175,13 +167,13 @@ with onglet1:
         "Places vides": inst.capacites[h] - len(L),
         "Satisfaction": round(sh.scores[h], 3),
         "Étudiants admis (du mieux au moins bien classé)":
-            ", ".join(E(e) for e in L[:30]) + (" …" if len(L) > 30 else ""),
+            abreger(map(E, L), 30),
     } for h, L in enumerate(res.admis)]), hide_index=True, width="stretch")
 
     non_aff = [E(e) for e, h in enumerate(res.affectation_etu) if h is None]
     if non_aff:
         st.warning(f"{len(non_aff)} étudiant(s) sans affectation : "
-                   + ", ".join(non_aff[:60]) + (" …" if len(non_aff) > 60 else ""))
+                   + abreger(non_aff, 60))
     else:
         st.success("Tous les étudiants ont une place.")
 
@@ -316,15 +308,9 @@ with onglet_pas:
                    "quitte un établissement, celui-ci retrouve une place et propose au tour suivant.")
     if inst.n_etu > 30:
         st.info("Conseil : pour suivre le déroulement, prenez une petite instance "
-                "(≤ 30 étudiants) ou l'« Exemple du mensonge » dans la barre latérale.")
+                "(≤ 30 étudiants) dans la barre latérale.")
 
-    inst_pas, cle_pas = inst, cle
-    if source == "exemple" and st.checkbox(
-            "Rejouer avec le mensonge : E0 déclare seulement H0 (au lieu de H0 > H1)",
-            key="pas_mensonge"):
-        inst_pas, cle_pas = remplacer_liste(inst, 0, [0]), ("exemple", "mensonge")
-
-    hist = calculer_historique(inst_pas, cle_pas, proposant_pas)
+    hist = calculer_historique(inst, cle, proposant_pas)
     nb_tours = len(hist.tours)
     if nb_tours == 0:
         st.write("Aucune proposition : rien à afficher.")
@@ -358,7 +344,7 @@ with onglet_pas:
         c.subheader("Admis à la fin du tour")
         c.dataframe(pd.DataFrame([{
             "Établissement": H(h), "Places": f"{len(L)}/{inst.capacites[h]}",
-            "Admis (provisoires)": ", ".join(E(e) for e in L[:20]) + (" …" if len(L) > 20 else "")}
+            "Admis (provisoires)": abreger(map(E, L), 20)}
             for h, L in enumerate(tour["admis"])]), hide_index=True, width="stretch")
 
         if t == nb_tours:
@@ -369,91 +355,3 @@ with onglet_pas:
             else:
                 st.success(f"Affectation finale atteinte après {nb_tours} tours "
                            f"et {hist.nb_propositions} propositions.")
-
-# ---------------------------------------------------------------------------
-# Onglet « Manipulation » : mentir sur ses préférences
-# ---------------------------------------------------------------------------
-
-TYPES = {"troncature": "Liste courte", "en_tete": "Autre établissement en tête",
-         "echange": "Échange de deux voisins"}
-
-
-def rang_txt(r):
-    return "∅ (rien)" if r is None else f"{r + 1}"
-
-
-with onglet_manip:
-    st.write("Un étudiant déclare une fausse liste. On mesure ce qu'il obtient avec ses **vraies** "
-             "préférences, et on vérifie la stabilité avec les **vraies** préférences.")
-    choix_m = st.radio("Qui propose ?", list(PROPOSANTS), horizontal=True, key="manip_proposant")
-    proposant_m = PROPOSANTS[choix_m]
-
-    st.subheader("1. Un étudiant ment seul : peut-il gagner ?")
-    st.caption("Mensonges testés : liste courte (ne déclarer que ses k premiers choix), mettre un "
-               "autre établissement en tête, échanger deux voisins. Théorie : impossible de gagner "
-               "quand les étudiants proposent ; possible quand les établissements proposent.")
-    nb_max = min(inst.n_etu, 100)
-    nb = (st.slider("Nombre d'étudiants testés", 1, nb_max, min(nb_max, 20), key="manip_nb")
-          if nb_max > 1 else 1)
-    if st.button("Chercher les mensonges qui paient", type="primary"):
-        with st.spinner("Test des mensonges…"):
-            st.session_state["mensonges"] = (cle, proposant_m, nb,
-                                             calculer_mensonges(inst, cle, proposant_m, nb))
-    if st.session_state.get("mensonges", (None,))[:3] == (cle, proposant_m, nb):
-        trouves = st.session_state["mensonges"][3]
-        st.metric("Étudiants qui gagnent en mentant", f"{len(trouves)} / {nb}",
-                  f"{100 * len(trouves) / nb:.0f} %", delta_color="off")
-        if trouves:
-            st.dataframe(pd.DataFrame([{
-                "Étudiant": E(m.etudiant),
-                "Mensonge": TYPES[m.type],
-                "Vraie liste": " > ".join(H(h) for h in inst.pref_etu[m.etudiant][:12])
-                               + (" …" if len(inst.pref_etu[m.etudiant]) > 12 else ""),
-                "Liste déclarée": " > ".join(H(h) for h in m.liste_declaree[:12])
-                                  + (" …" if len(m.liste_declaree) > 12 else ""),
-                "Vrai rang (vérité)": rang_txt(m.rang_honnete),
-                "Vrai rang (mensonge)": rang_txt(m.rang_mensonge),
-                "Stable (vraies préf.)": "oui" if m.stable_vrai else "non",
-            } for m in trouves]), hide_index=True, width="stretch")
-        else:
-            st.success("Aucun étudiant testé ne peut gagner en mentant : dire la vérité est "
-                       "la meilleure stratégie.")
-
-    st.subheader("2. Beaucoup d'étudiants déclarent une liste courte")
-    st.caption("Une part des étudiants ne déclare que ses k premiers choix. L'algorithme donne une "
-               "affectation stable pour les listes déclarées, mais elle peut être instable pour "
-               "les vraies préférences.")
-    k_max = max(len(p) for p in inst.pref_etu) - 1
-    if k_max < 1:
-        st.write("Les listes sont trop courtes pour être raccourcies.")
-    else:
-        c1, c2 = st.columns(2)
-        pct = c1.slider("% d'étudiants qui raccourcissent leur liste", 0, 100, 50, 5,
-                        key="manip_pct")
-        k_court = (c2.slider("Choix déclarés (k)", 1, k_max, min(3, k_max), key="manip_k")
-                   if k_max > 1 else 1)
-        declare, menteurs = tronquer_listes(inst, pct / 100, k_court,
-                                            graine=int(graine) if source == "aleatoire" else 0)
-        honnetes = sorted(set(range(inst.n_etu)) - set(menteurs))
-        lignes_m = {}
-        for nom, decl in (("Tout le monde dit la vérité", inst), ("Avec listes courtes", declare)):
-            r_ = gale_shapley(decl, proposant_m)
-            se_ = satisfaction_etudiants(inst, r_)
-            sh_ = satisfaction_etablissements(inst, r_)
-            moy = (lambda ids: f"{sum(se_.scores[e] for e in ids) / len(ids):.3f}"
-                   if ids else "-")
-            lignes_m[nom] = {
-                "Paires bloquantes (listes déclarées)": len(paires_bloquantes(decl, r_)),
-                "Paires bloquantes (vraies préférences)": len(paires_bloquantes(inst, r_)),
-                "% étudiants sans place": f"{se_.pct_non_servis:.1f}",
-                "Satisfaction étudiants (vraie)": f"{se_.moyenne:.3f}",
-                "… des étudiants qui raccourcissent": moy(menteurs),
-                "… des étudiants honnêtes": moy(honnetes),
-                "Satisfaction établissements": f"{sh_.moyenne:.3f}",
-                "% places remplies": f"{sh_.extra['taux_remplissage']:.1f}",
-            }
-        st.dataframe(pd.DataFrame(lignes_m).astype(str), width="stretch")
-        st.caption(f"{len(menteurs)} étudiant(s) sur {inst.n_etu} déclarent seulement "
-                   f"{k_court} choix. Une paire bloquante « vraie » = un étudiant et un "
-                   "établissement qui se préfèrent vraiment, souvent un étudiant sans place "
-                   "face à une place vide.")

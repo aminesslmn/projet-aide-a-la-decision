@@ -19,21 +19,17 @@ Le travail comprend :
 ```
 python mariage_stable.py      # petit exemple commenté
 python experiences.py [R]     # R instances par scénario (30 par défaut)
-python experiences.py --manipulation [R]   # tests de manipulation (section 6.2)
 
 pip install -r requirements.txt
 streamlit run interface.py    # interface graphique dans le navigateur
 ```
 
-L'interface propose cinq onglets :
+L'interface propose quatre onglets :
 
 - **Une instance** : générer une instance et voir l'affectation obtenue (stabilité, satisfaction, résultat par établissement) ;
 - **Pas à pas** : rejouer l'algorithme tour par tour (propositions, rejets, admis provisoires) ;
 - **Comparer les deux côtés** : les deux versions de l'algorithme sur la même instance ;
-- **Manipulation** : chercher les mensonges qui paient et simuler des listes courtes ;
 - **Les 22 scénarios** : le tableau des résultats, les graphiques et le téléchargement de `resultats.csv`.
-
-Un « exemple du mensonge » à 2 étudiants (section 6.2) peut être chargé dans la barre latérale.
 
 ## 2. Modélisation
 
@@ -86,7 +82,7 @@ Chaque établissement ayant des places libres propose à ses étudiants préfér
 - **Terminaison et complexité** : chaque agent propose au plus une fois à chaque membre de l'autre côté. Il y a donc au plus *n × m* propositions, et l'algorithme est en O(*n·m*) (à un facteur *c_h* près pour la recherche du pire admis).
 - **Stabilité** : la fonction `paires_bloquantes()` vérifie le résultat. Elle a renvoyé une liste vide sur **100 % des 1320 exécutions** (section 6).
 - **Optimalité** : la version étudiants proposants donne à chaque étudiant le meilleur établissement possible parmi toutes les affectations stables, et le pire pour les établissements. La version établissements proposants fait l'inverse. Les expériences le confirment.
-- **Non-manipulabilité** : côté étudiants proposants, un étudiant n'a jamais intérêt à mentir sur ses préférences. C'est la raison pour laquelle les plateformes réelles utilisent cette version. Côté établissements proposants, ce n'est plus vrai. La section 6.2 le vérifie : 0 % de mensonges gagnants dans le premier cas, jusqu'à 53 % d'étudiants gagnants dans le second.
+- **Non-manipulabilité** (résultat théorique connu, non testé ici) : côté étudiants proposants, un étudiant n'a jamais intérêt à mentir sur ses préférences. C'est la raison pour laquelle les plateformes réelles utilisent cette version.
 
 ## 5. Mesure de la satisfaction
 
@@ -211,77 +207,6 @@ Pour étudier l'effet du nombre de places, on ajoute 12 scénarios. Tous ont 200
 12. **Établissements à une place** (S19, 200 × 1) : on retrouve le cas 1-1 (comme S10) avec un fort avantage pour le côté proposant : le rang moyen des étudiants passe de 5,2 à 33,7 quand les établissements proposent. Plus les capacités sont petites, plus il existe d'affectations stables différentes, et plus le choix du côté proposant est important.
 13. **Capacité et popularité** (S20, S21) : si les établissements les plus demandés sont **grands**, 61 % des étudiants ont leur premier choix (S_etu = 0,911, Gini 0,07). S'ils sont **petits**, seulement 16 % l'obtiennent (S_etu = 0,678, Gini 0,21). Les capacités sont pourtant les mêmes dans les deux cas : seule leur attribution change. Pour un décideur, augmenter les places des formations les plus demandées est le levier le plus efficace pour la satisfaction des étudiants.
 14. **Pénurie et préférences corrélées** (S22 contre S7) : avec 50 % de places, la moitié des étudiants restent sans affectation dans les deux cas. Les inégalités restent très fortes (Gini 0,64). Mais les établissements classent tous les étudiants à peu près de la même façon. Les étudiants sans place devraient donc être surtout ceux qui ont une note commune faible : la pénurie n'est plus répartie au hasard. Ce point n'est pas mesuré ici. On pourrait le vérifier en comparant la note des étudiants non affectés à celle des autres.
-
-### 6.2 Manipulation : mentir sur ses préférences, listes courtes
-
-L'algorithme ne connaît que les préférences **déclarées**. Un étudiant peut mentir de plusieurs façons :
-
-- déclarer une **liste courte** (cacher des établissements qu'il accepterait) ;
-- mettre un autre établissement en tête ;
-- échanger deux voisins dans sa liste.
-
-On mesure toujours ce qu'il obtient avec ses **vraies** préférences, et la stabilité est vérifiée avec les **vraies** préférences (`chercher_mensonges()`, `tronquer_listes()`, `python experiences.py --manipulation 30`).
-
-**Exemple** (`exemple_mensonge()`) : deux étudiants E0 et E1, deux établissements H0 et H1 d'une place chacun.
-
-| | Vraies préférences |
-|---|---|
-| E0 | H0 > H1 |
-| E1 | H1 > H0 |
-| H0 | E1 > E0 |
-| H1 | E0 > E1 |
-
-Les établissements proposent.
-
-- **Si tout le monde dit la vérité** : H0 propose à E1 et H1 propose à E0. Chacun garde son offre, et tous les deux obtiennent leur **2e choix**.
-- **Si E0 ne déclare que H0** :
-  1. E0 refuse H1.
-  2. H1 propose alors à E1, qui quitte H0.
-  3. H0, de nouveau libre, propose à E0.
-
-  Tous les deux obtiennent leur **1er choix**.
-
-En refusant une offre qu'il aurait acceptée, E0 déclenche une chaîne de rejets qui lui rapporte mieux. L'onglet « Pas à pas » de l'interface rejoue ces deux déroulements.
-
-**A. Un étudiant ment seul** (30 instances par cas ; pour chaque étudiant, tous les mensonges simples sont testés).
-
-| Cas | Proposant | % étudiants qui gagnent | dont par liste courte | par autre en tête | par échange | Gain moyen (rangs) | % résultats instables (vraies préf.) |
-|---|---|---|---|---|---|---|---|
-| 1-1, n = 30, uniforme | étudiants | **0** | 0 | 0 | 0 | – | – |
-| | établ. | **52,7** | 52,7 | 0 | 0,7 | 8,2 | 0 |
-| 1-1, n = 30, corrélé 0,7 | étudiants | **0** | 0 | 0 | 0 | – | – |
-| | établ. | **21,3** | 21,3 | 0 | 0,8 | 7,0 | 0 |
-| 60 étu. / 6 étab., uniforme | étudiants | **0** | 0 | 0 | 0 | – | – |
-| | établ. | **30,8** | 30,8 | 0 | 1,2 | 1,8 | 0 |
-| 60 étu. / 6 étab., corrélé 0,7 | étudiants | **0** | 0 | 0 | 0 | – | – |
-| | établ. | **7,8** | 7,8 | 0 | 1,1 | 1,5 | 0 |
-
-**B. Une part des étudiants déclare une liste courte** (200 étudiants, 10 établissements de 20 places, préférences uniformes, 30 instances). *BP* = nombre moyen de paires bloquantes ; *S_menteurs* / *S_honnêtes* = satisfaction (vraie) de chaque groupe.
-
-| k déclarés | % menteurs | Proposant | BP (listes déclarées) | BP (vraies préf.) | % instances instables | % NA | S_etu | S_menteurs | S_honnêtes | S_etab |
-|---|---|---|---|---|---|---|---|---|---|---|
-| – | 0 % | étudiants | 0 | 0 | 0 | 0 | 0,965 | – | 0,965 | 0,608 |
-| | | établ. | 0 | 0 | 0 | 0 | 0,849 | – | 0,849 | 0,783 |
-| 1 | 25 % | étudiants | 0 | 54,6 | 100 | 3,5 | 0,951 | 0,859 | 0,982 | 0,543 |
-| | | établ. | 0 | 54,3 | 100 | 3,5 | 0,951 | 0,859 | 0,981 | 0,545 |
-| 1 | 50 % | étudiants | 0 | 92,1 | 100 | 5,8 | 0,935 | 0,885 | 0,986 | 0,520 |
-| 1 | 100 % | étudiants | 0 | 145,6 | 100 | 8,8 | 0,912 | 0,912 | – | 0,492 |
-| 3 | 25 % | étudiants | 0 | 2,4 | 43 | 0,2 | 0,965 | 0,961 | 0,966 | 0,603 |
-| | | établ. | 0 | 2,4 | 43 | 0,2 | 0,956 | 0,954 | 0,956 | 0,627 |
-| 3 | 50 % | étudiants | 0 | 5,2 | 67 | 0,5 | 0,964 | 0,961 | 0,967 | 0,599 |
-| 3 | 100 % | étudiants | 0 | 9,6 | 87 | 0,8 | 0,965 | 0,965 | – | 0,589 |
-| | | établ. | 0 | 9,5 | 87 | 0,8 | 0,963 | 0,963 | – | 0,595 |
-
-*Les lignes établissements proposants non reprises sont presque identiques à celles des étudiants proposants (voir `resultats_manipulation_collectif.csv`).*
-
-**Analyse**
-
-15. **Non-manipulabilité confirmée** : quand les étudiants proposent, **aucun** des mensonges testés ne fait gagner un étudiant, dans tous les cas. Dire la vérité est la meilleure stratégie.
-16. **Quand les établissements proposent, mentir paie** : jusqu'à 53 % des étudiants peuvent gagner (1-1 uniforme), en moyenne 8 rangs. Le mensonge efficace est presque toujours la **liste courte**. Mettre un autre établissement en tête ne fait jamais gagner, et échanger deux voisins très rarement. Plus les préférences sont corrélées, moins il y a de marge : il existe alors peu d'affectations stables différentes (7,8 % de gagnants avec c = 0,7).
-17. **Un mensonge individuel ne rend pas le résultat instable** : dans 100 % des cas gagnants, l'affectation obtenue reste stable pour les vraies préférences. La liste courte permet seulement au menteur de se rapprocher de l'affectation optimale pour les étudiants.
-18. **Des listes courtes en masse rendent le résultat instable** : l'algorithme reste correct, avec 0 paire bloquante pour les listes déclarées. Mais pour les **vraies** préférences, toutes les instances deviennent instables dès que 25 % des étudiants ne déclarent qu'un choix (55 à 146 paires bloquantes). Typiquement, un étudiant reste **sans place** (3,5 % à 8,8 %) alors qu'un établissement qu'il aurait accepté a encore une place libre. Avec k = 3, l'effet est plus faible mais réel (0,2 à 0,8 % sans place, 43 à 87 % des instances instables).
-19. **Qui y perd ?** Quand les étudiants proposent, raccourcir sa liste ne fait que **perdre** : 0,859 contre 0,965 en disant la vérité (k = 1, 25 % de menteurs). Les honnêtes, eux, y gagnent un peu (0,982), car la concurrence baisse. Les établissements perdent toujours, avec des places vides : S_etab passe de 0,608 à 0,492.
-20. **Effet inattendu quand les établissements proposent** : les listes courtes rapprochent le résultat de l'affectation optimale pour les étudiants. Même les **honnêtes** en profitent (0,849 → 0,98 avec k = 1 et 25 % de menteurs). Les deux versions de l'algorithme donnent alors presque le même résultat. C'est pourquoi, dans la version établissements proposants, les étudiants ont intérêt à jouer stratégiquement, ce que la version étudiants proposants évite.
 
 ## 7. Extension : représentations compactes des préférences (sans implantation)
 
